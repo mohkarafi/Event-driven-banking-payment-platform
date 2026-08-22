@@ -1,52 +1,60 @@
 package account.service;
 
-import account.dto.AccountResponse;
-import account.dto.AmountRequest;
-import account.dto.BalanceResponse;
-import account.dto.CreateAccountRequest;
+import account.dto.*;
 import account.entity.Account;
 import account.entity.AccountStatus;
+import account.exception.AccountAlreadyExistsException;
 import account.exception.AccountBlockedException;
 import account.exception.InsufficientBalanceException;
 import account.exception.InvalidAmountException;
 import account.repository.AccountRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.security.auth.login.AccountNotFoundException;
 import java.math.BigDecimal;
-import java.util.UUID;
+import java.security.SecureRandom;
+
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AccountService {
     private final AccountRepository accountRepository;
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     @Transactional
-    public AccountResponse createAccount(CreateAccountRequest request) {
+    public ApiResponse<AccountResponse> createAccount(CreateAccountRequest request) {
 
+        if(accountRepository.existsByCin(request.CIN())){
+            throw new AccountAlreadyExistsException("An Account with this CIN already exists");
+        }
         String accountNumber = generateAccountNumber();
-
         Account account = Account.builder()
                 .fullName(request.fullName())
                 .email(request.email())
                 .accountNumber(accountNumber)
                 .currency(request.currency())
                 .balance(BigDecimal.ZERO)
+                .cin(request.CIN())
+                .status(AccountStatus.ACTIVE)
                 .build();
 
 
         Account savedAccount = accountRepository.save(account);
-
-        return toResponse(savedAccount);
+        log.info("Account created: {}", savedAccount.getAccountNumber());
+        return new ApiResponse<>(HttpStatus.CREATED.value() , "Account created succesfuly " ,  toResponse(savedAccount));
     }
 
-    public AccountResponse getAccount(Long accountId) throws AccountNotFoundException {
 
+
+    public ApiResponse<AccountResponse> getAccount(Long accountId) throws AccountNotFoundException {
         Account account = getAccountEntity(accountId);
+        return new ApiResponse<>(HttpStatus.OK.value() , "Account found succesfuly " , toResponse(account));
 
-        return toResponse(account);
     }
 
 
@@ -69,7 +77,7 @@ public class AccountService {
 
 
     @Transactional
-    public AccountResponse withdraw(Long accountId, AmountRequest request) throws AccountNotFoundException {
+    public ApiResponse<AccountResponse> withdraw(Long accountId, AmountRequest request) throws AccountNotFoundException {
 
         Account account = getAccountEntity(accountId);
 
@@ -79,17 +87,18 @@ public class AccountService {
 
         if (account.getBalance().compareTo(request.amount()) < 0) {
 
-            throw new InsufficientBalanceException("Insufficient balance");
+            throw new InsufficientBalanceException("Insufficient balance in this account");
         }
 
         account.setBalance(account.getBalance().subtract(request.amount()));
 
-        return toResponse(accountRepository.save(account));
+        return new ApiResponse<>(HttpStatus.OK.value() , "Withdrawal completed successfully" , toResponse(accountRepository.save(account)));
+
     }
 
 
     @Transactional
-    public AccountResponse deposit(Long accountId, AmountRequest request
+    public ApiResponse<AccountResponse> deposit(Long accountId, AmountRequest request
     ) throws AccountNotFoundException {
 
         Account account = getAccountEntity(accountId);
@@ -98,16 +107,16 @@ public class AccountService {
 
         validateAmount(request.amount());
 
-        account.setBalance(account.getBalance().add(request.amount())
-        );
+        account.setBalance(account.getBalance().add(request.amount()));
 
-        return toResponse(accountRepository.save(account));
+        return new ApiResponse<>(HttpStatus.OK.value() , "Deposit completed successfully " , toResponse(accountRepository.save(account)));
+
     }
 
 
 
     @Transactional
-    public AccountResponse blockAccount(Long accountId) throws AccountNotFoundException {
+    public ApiResponse<AccountResponse> blockAccount(Long accountId) throws AccountNotFoundException {
 
         Account account = getAccountEntity(accountId);
 
@@ -119,14 +128,13 @@ public class AccountService {
 
         account.setStatus(AccountStatus.BLOCKED);
 
-        return toResponse(
-                accountRepository.save(account)
-        );
+        return new ApiResponse<>(HttpStatus.OK.value() , "Account blocked successfully " , toResponse(accountRepository.save(account)));
+
     }
 
 
     @Transactional
-    public AccountResponse activateAccount(Long accountId) throws AccountNotFoundException {
+    public ApiResponse<AccountResponse> activateAccount(Long accountId) throws AccountNotFoundException {
 
         Account account = getAccountEntity(accountId);
 
@@ -138,8 +146,9 @@ public class AccountService {
 
         account.setStatus(AccountStatus.ACTIVE);
 
-        return toResponse(accountRepository.save(account)
-        );
+
+        return new ApiResponse<>(HttpStatus.OK.value() , "Account activated successfully. " , toResponse(accountRepository.save(account)));
+
     }
 
 
@@ -152,7 +161,7 @@ public class AccountService {
         if (account.getStatus() != AccountStatus.ACTIVE) {
 
             throw new AccountBlockedException(
-                    "Account is not active"
+                    "this account is not active"
             );
         }
     }
@@ -179,23 +188,20 @@ public class AccountService {
     }
     private AccountResponse toResponse(Account account) {
         return AccountResponse.builder()
-                .id(account.getId())
                 .fullName(account.getFullName())
-                .email(account.getEmail())
                 .accountNumber(account.getAccountNumber())
-                .balance(account.getBalance())
-                .currency(account.getCurrency())
                 .status(account.getStatus())
                 .build();
     }
 
     private String generateAccountNumber() {
-        return "MA-" +
-                UUID.randomUUID()
-                        .toString()
-                        .replace("-", "")
-                        .substring(0, 12)
-                        .toUpperCase();
+        StringBuilder sb = new StringBuilder(24);
+        // Premier chiffre non nul pour garantir exactement 24 chiffres (pas de zéro en tête)
+        sb.append(1 + RANDOM.nextInt(9));
+        for (int i = 1; i < 24; i++) {
+            sb.append(RANDOM.nextInt(10));
+        }
+        return sb.toString();
     }
 
 

@@ -1,10 +1,9 @@
 package account.controller;
 
 import account.dto.*;
-import account.service.AccountService;
+import account.service.AccountServiceImplt;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,7 +14,7 @@ import javax.security.auth.login.AccountNotFoundException;
 @RequestMapping("/api/accounts")
 public class AccountController {
 
-    private final AccountService accountService;
+    private final AccountServiceImplt accountService;
 
 
     @PostMapping
@@ -23,33 +22,33 @@ public class AccountController {
        return ResponseEntity.ok(accountService.createAccount(request));
     }
 
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<AccountResponse>> getAccount(@PathVariable Long id) throws AccountNotFoundException {
-        return ResponseEntity.ok(accountService.getAccount(id));
+    @GetMapping("/{accountNumber}")
+    public ResponseEntity<ApiResponse<AccountResponse>> getAccount(@PathVariable String accountNumber) throws AccountNotFoundException {
+        return ResponseEntity.ok(accountService.getAccount(accountNumber));
     }
 
-    @GetMapping("/{id}/balance")
-    public ResponseEntity<BalanceResponse> getBalance(@PathVariable Long id) throws AccountNotFoundException {
-        return ResponseEntity.ok(accountService.getBalance(id));
+    @GetMapping("/{accountNumber}/balance")
+    public ResponseEntity<BalanceResponse> getBalance(@PathVariable String accountNumber) throws AccountNotFoundException {
+        return ResponseEntity.ok(accountService.getBalance(accountNumber));
     }
 
-    @PostMapping("/{id}/deposit")
-    public ResponseEntity<ApiResponse<AccountResponse>> deposit(@PathVariable Long id, @Valid @RequestBody AmountRequest request) throws AccountNotFoundException {
-        return ResponseEntity.ok(accountService.deposit(id, request));
+    @PostMapping("/{accountNumber}/deposit")
+    public ResponseEntity<ApiResponse<AccountResponse>> deposit(@PathVariable String accountNumber, @Valid @RequestBody AmountRequest request) throws AccountNotFoundException {
+        return ResponseEntity.ok(accountService.deposit(accountNumber, request));
     }
 
-    @PostMapping("/{id}/withdraw")
-    public ResponseEntity<ApiResponse<AccountResponse>> withdraw(@PathVariable Long id, @Valid @RequestBody AmountRequest request) throws AccountNotFoundException {
-        return ResponseEntity.ok(accountService.withdraw(id, request));
+    @PostMapping("/{accountNumber}/withdraw")
+    public ResponseEntity<ApiResponse<AccountResponse>> withdraw(@PathVariable String accountNumber, @Valid @RequestBody AmountRequest request) throws AccountNotFoundException {
+        return ResponseEntity.ok(accountService.withdraw(accountNumber, request));
     }
 
-    @PatchMapping("/{id}/block")
-    public ResponseEntity<ApiResponse<AccountResponse>>  block(@PathVariable Long id) throws AccountNotFoundException {
-        return ResponseEntity.ok(accountService.blockAccount(id));
+    @PatchMapping("/{accountNumber}/block")
+    public ResponseEntity<ApiResponse<AccountResponse>>  block(@PathVariable String accountNumber) throws AccountNotFoundException {
+        return ResponseEntity.ok(accountService.blockAccount(accountNumber));
     }
 
-    @PatchMapping("/{id}/activate")
-    public ResponseEntity<ApiResponse<AccountResponse>>  activate(@PathVariable Long id) throws AccountNotFoundException {
-        return ResponseEntity.ok(accountService.activateAccount(id));
+    @PatchMapping("/{accountNumber}/activate")
+    public ResponseEntity<ApiResponse<AccountResponse>>  activate(@PathVariable String accountNumber) throws AccountNotFoundException {
+        return ResponseEntity.ok(accountService.activateAccount(accountNumber));
     }
 }

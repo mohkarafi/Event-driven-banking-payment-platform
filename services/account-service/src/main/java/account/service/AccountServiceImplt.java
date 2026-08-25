@@ -182,6 +182,9 @@ public class AccountServiceImplt implements AccountService {
                 .fullName(account.getFullName())
                 .accountNumber(account.getAccountNumber())
                 .status(account.getStatus())
+                .balance(account.getBalance())
+                .CIN(account.getCin())
+                .currency(account.getCurrency())
                 .build();
     }
 

@@ -35,15 +35,12 @@ public class Payment {
 
     @Column(nullable = false)
     private String currency;
-
     private String description;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PaymentStatus status;
 
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private LocalDateTime createdAt = LocalDateTime.now();
 
-    @Column(nullable = false)
-    private LocalDateTime updatedAt;
+    private LocalDateTime updatedAt = LocalDateTime.now();
 }

@@ -1,5 +1,6 @@
 package karafi.paymentservice.handler;
 
+import feign.FeignException;
 import karafi.paymentservice.dto.ApiError;
 import karafi.paymentservice.exception.*;
 import lombok.extern.slf4j.Slf4j;
@@ -77,12 +78,12 @@ public class GlobalExceptionHandler {
                 "Payment could not be processed. Please try again later.");
     }
 
-   /* @ExceptionHandler(FeignException.class)
+    @ExceptionHandler(FeignException.class)
     public ResponseEntity<ApiError> handleFeignException(FeignException ex) {
         log.error("Downstream call to account-service failed: status={}", ex.status(), ex);
         return build(HttpStatus.BAD_GATEWAY, "ACCOUNT_SERVICE_UNAVAILABLE",
                 "Could not reach account-service. Please try again later.");
-    }*/
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiError> handleValidation(MethodArgumentNotValidException ex) {

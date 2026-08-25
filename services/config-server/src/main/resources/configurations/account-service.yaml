@@ -19,6 +19,3 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       properties:
         spring.json.type.mapping: paymentConfirmation:com.alibou.ecommerce.notification.PaymentNotificationRequest
-application:
-  config:
-    product-url: http://localhost:8222/api/v1/products

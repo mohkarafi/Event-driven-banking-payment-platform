@@ -1,8 +1,11 @@
 package karafi.paymentservice.kafka;
 
+import lombok.Builder;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+@Builder
 public record PaymentFailedEvent(
         String paymentReference,
         String sourceAccountNumber,

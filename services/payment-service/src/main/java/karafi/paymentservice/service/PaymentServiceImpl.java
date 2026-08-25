@@ -34,7 +34,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final AccountClient accountClient;
-    private final PaymentEventProducer eventProducer;
+   // private final PaymentEventProducer eventProducer;
 
     @Override
     @Transactional
@@ -86,16 +86,6 @@ public class PaymentServiceImpl implements PaymentService {
         return ApiResponse.of(201, "Payment created successfully.", toResponse(payment));
     }
 
-    @Override
-    public ApiResponse<PaymentResponse> getPayment(Long paymentId) {
-        return null;
-    }
-
-    @Override
-    public ApiResponse<PaymentResponse> getPaymentByReference(String paymentReference) {
-        return null;
-    }
-
 // ------------------------------------------------------------------
     // Execute
     // ------------------------------------------------------------------
@@ -107,14 +97,26 @@ public class PaymentServiceImpl implements PaymentService {
 
         transition(payment, PaymentStatus.PROCESSING);
 
+        try {
+            return doExecute(payment);
+        } catch (Exception e) {
+            log.error("Unexpected error during payment execution reference={}", payment.getPaymentReference(), e);
+            return fail(payment, "Unexpected error during payment processing");
+        }
+    }
+
+    private ApiResponse<PaymentResponse> doExecute(Payment payment) {
         AccountDto source;
         AccountDto destination;
         try {
-            source = accountClient.getAccountByNumber(payment.getSourceAccountNumber());
-            destination = accountClient.getAccountByNumber(payment.getDestinationAccountNumber());
+            source = accountClient.getAccountByNumber(payment.getSourceAccountNumber()).data();
+            destination = accountClient.getAccountByNumber(payment.getDestinationAccountNumber()).data();
         } catch (FeignException.NotFound e) {
             return fail(payment, "Source or destination account not found");
         }
+
+        validateAccountData(source, payment.getSourceAccountNumber());
+        validateAccountData(destination, payment.getDestinationAccountNumber());
 
         if (source.status() != AccountStatus.ACTIVE) {
             return fail(payment, "Source account is not active");
@@ -126,26 +128,26 @@ public class PaymentServiceImpl implements PaymentService {
             return fail(payment, "Insufficient balance on source account");
         }
 
-        // Step 1: debit the source account.
         try {
-            accountClient.withdraw(payment.getSourceAccountNumber(), AmountRequest.builder().amount(payment.getAmount()).currency(payment.getCurrency()).build());
+            accountClient.withdraw(payment.getSourceAccountNumber(),
+                    AmountRequest.builder().amount(payment.getAmount()).currency(payment.getCurrency()).build());
         } catch (Exception e) {
             log.error("Withdraw failed for payment reference={}", payment.getPaymentReference(), e);
             return fail(payment, "Withdraw failed on source account");
         }
 
         try {
-            accountClient.deposit(payment.getDestinationAccountNumber(), AmountRequest.builder().amount(payment.getAmount()).currency(payment.getCurrency()).build());
+            accountClient.deposit(payment.getDestinationAccountNumber(),
+                    AmountRequest.builder().amount(payment.getAmount()).currency(payment.getCurrency()).build());
         } catch (Exception depositEx) {
             log.error("Deposit failed after successful withdraw for payment reference={}. Attempting compensation.",
                     payment.getPaymentReference(), depositEx);
             try {
-                accountClient.deposit(payment.getSourceAccountNumber(), AmountRequest.builder().amount(payment.getAmount()).currency(payment.getCurrency()).build());
-                log.warn("Compensation succeeded: reversed withdraw for payment reference={}",
-                        payment.getPaymentReference());
+                accountClient.deposit(payment.getSourceAccountNumber(),
+                        AmountRequest.builder().amount(payment.getAmount()).currency(payment.getCurrency()).build());
+                log.warn("Compensation succeeded: reversed withdraw for payment reference={}", payment.getPaymentReference());
             } catch (Exception compensationEx) {
-                log.error("CRITICAL: compensation FAILED for payment reference={}. Source account {} may be "
-                                + "short by {} {}. Manual reconciliation required.",
+                log.error("CRITICAL: compensation FAILED for payment reference={}. Source account {} may be short by {} {}. Manual reconciliation required.",
                         payment.getPaymentReference(), payment.getSourceAccountNumber(),
                         payment.getAmount(), payment.getCurrency(), compensationEx);
             }
@@ -154,36 +156,61 @@ public class PaymentServiceImpl implements PaymentService {
 
         transition(payment, PaymentStatus.COMPLETED);
         log.info("Payment completed: reference={}", payment.getPaymentReference());
-
-        eventProducer.publishPaymentCompleted(new PaymentCompletedEvent(
-                payment.getPaymentReference(),
-                payment.getSourceAccountNumber(),
-                payment.getDestinationAccountNumber(),
-                payment.getAmount(),
-                payment.getCurrency(),
-                LocalDateTime.now()
-        ));
-
         return ApiResponse.of(200, "Payment executed successfully.", toResponse(payment));
     }
 
-    private ApiResponse<PaymentResponse> fail(Payment payment, String reason) {
-        transition(payment, PaymentStatus.FAILED);
-        log.warn("Payment failed: reference={}, reason={}", payment.getPaymentReference(), reason);
-
-        eventProducer.publishPaymentFailed(new PaymentFailedEvent(
-                payment.getPaymentReference(),
-                payment.getSourceAccountNumber(),
-                payment.getDestinationAccountNumber(),
-                payment.getAmount(),
-                payment.getCurrency(),
-                reason,
-                LocalDateTime.now()
-        ));
-
-        return ApiResponse.of(200, "Payment failed: " + reason, toResponse(payment));
+    private void validateAccountData(AccountDto account, String accountNumber) {
+        if (account == null || account.balance() == null || account.status() == null) {
+            throw new PaymentProcessingException(
+                    "Incomplete account data received from account-service for " + accountNumber);
+        }
     }
 
+    // ------------------------------------------------------------------
+    // Cancel
+    // ------------------------------------------------------------------
+
+    @Override
+    @Transactional
+    public ApiResponse<PaymentResponse> cancelPayment(Long paymentId) {
+        Payment payment = getPaymentOrThrow(paymentId);
+
+        if (payment.getStatus() == PaymentStatus.COMPLETED) {
+            throw new PaymentAlreadyCompletedException(
+                    "Payment " + payment.getPaymentReference()
+                            + " is already completed and cannot be cancelled; use a refund instead");
+        }
+        if (payment.getStatus() == PaymentStatus.CANCELLED) {
+            throw new PaymentAlreadyCancelledException(
+                    "Payment " + payment.getPaymentReference() + " is already cancelled");
+        }
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw new InvalidPaymentStateException(
+                    "Payment " + payment.getPaymentReference() + " cannot be cancelled from state "
+                            + payment.getStatus());
+        }
+
+        transition(payment, PaymentStatus.CANCELLED);
+        log.info("Payment cancelled: reference={}", payment.getPaymentReference());
+
+        return ApiResponse.of(200, "Payment cancelled successfully.", toResponse(payment));
+    }
+
+
+    // ----------------------------
+    // fail
+    // -----------------------------
+    private ApiResponse<PaymentResponse> fail(Payment payment, String reason) {
+        transition(payment, PaymentStatus.FAILED);
+
+        log.warn("Payment failed: reference={}, reason={}", payment.getPaymentReference(), reason);
+
+        return ApiResponse.of(402, "Payment failed: " + reason, toResponse(payment));
+    }
+
+    // --------------------------------------
+    // Asserts
+    // ------------------------------------------
     private void assertCanStartProcessing(Payment payment) {
         if (payment.getStatus() == PaymentStatus.COMPLETED) {
             throw new PaymentAlreadyCompletedException(
@@ -200,10 +227,36 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
+    // --------------------------------------
+    // Get Payment
+    // ------------------------------------------
+
+
+
     @Override
-    public ApiResponse<PaymentResponse> cancelPayment(Long paymentId) {
-        return null;
+    @Transactional(readOnly = true)
+    public ApiResponse<PaymentResponse> getPayment(Long paymentId) {
+        return ApiResponse.of(200, "Payment retrieved successfully.", toResponse(getPaymentOrThrow(paymentId)));
     }
+
+
+
+    // --------------------------------------
+    //  Get Payment By reference
+    // ------------------------------------------
+
+    @Override
+    @Transactional(readOnly = true)
+    public ApiResponse<PaymentResponse> getPaymentByReference(String paymentReference) {
+        Payment payment = paymentRepository.findByPaymentReference(paymentReference)
+                .orElseThrow(() -> new PaymentNotFoundException("Payment not found: " + paymentReference));
+        return ApiResponse.of(200, "Payment retrieved successfully.", toResponse(payment));
+    }
+
+
+    // --------------------------------------
+    //  Get Payment By Account
+    // ------------------------------------------
 
     @Override
     @Transactional(readOnly = true)
@@ -215,9 +268,6 @@ public class PaymentServiceImpl implements PaymentService {
                 .toList();
         return ApiResponse.of(200, "Payments retrieved successfully.", payments);
     }
-
-
-
 
 
     // ------------------------------------------------------------------

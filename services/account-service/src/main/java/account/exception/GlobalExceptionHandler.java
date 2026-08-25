@@ -10,16 +10,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccountNotFoundException.class)
-    public ResponseEntity<ApiError> handleAccountNotFound(
-            AccountNotFoundException ex) {
+    public ResponseEntity<ApiError> handleAccountNotFound(AccountNotFoundException ex) {
 
-        return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
-                .body(new ApiError(
-                        404,
-                        "ACCOUNT_NOT_FOUND",
-                        ex.getMessage()
-                ));
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiError(404, "ACCOUNT_NOT_FOUND", ex.getMessage()));
     }
 
     @ExceptionHandler(AccountAlreadyExistsException.class)

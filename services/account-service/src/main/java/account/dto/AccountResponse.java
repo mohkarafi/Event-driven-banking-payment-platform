@@ -9,6 +9,9 @@ import java.math.BigDecimal;
 public record AccountResponse(
         String fullName,
         String accountNumber,
-        AccountStatus status
+        AccountStatus status,
+        BigDecimal balance,
+        String currency,
+        String CIN
 ) {
 }

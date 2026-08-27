@@ -6,10 +6,13 @@ import karafi.paymentservice.dto.*;
 import karafi.paymentservice.entity.Payment;
 import karafi.paymentservice.entity.PaymentStatus;
 import karafi.paymentservice.exception.*;
+
 import karafi.paymentservice.kafka.PaymentCompletedEvent;
 import karafi.paymentservice.kafka.PaymentEventProducer;
 import karafi.paymentservice.kafka.PaymentFailedEvent;
+import karafi.paymentservice.mapper.PaymentMapper;
 import karafi.paymentservice.repository.PaymentRepository;
+import karafi.paymentservice.util.PaymentUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,6 +24,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+
+import static java.util.stream.Collectors.toList;
 
 
 @Slf4j
@@ -34,7 +39,9 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final AccountClient accountClient;
-   // private final PaymentEventProducer eventProducer;
+    private final PaymentEventProducer eventProducer;
+    private final PaymentUtils paymentUtils;
+    private final PaymentMapper paymentMapper;
 
     @Override
     @Transactional
@@ -46,7 +53,7 @@ public class PaymentServiceImpl implements PaymentService {
         var existing = paymentRepository.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
             log.info("Idempotent replay detected for key={}, returning existing payment reference={} ", idempotencyKey, existing.get().getPaymentReference());
-            return ApiResponse.of(200, "Payment already exists for this idempotency key.", toResponse(existing.get()));
+            return ApiResponse.of(200, "Payment already exists for this idempotency key.", paymentMapper.toResponse(existing.get()));
         }
 
         if (request.sourceAccountNumber().equals(request.destinationAccountNumber())) {
@@ -58,7 +65,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         Payment payment = Payment.builder()
-                .paymentReference(generatePaymentReference())
+                .paymentReference(paymentUtils.generatePaymentReference())
                 .idempotencyKey(idempotencyKey)
                 .sourceAccountNumber(request.sourceAccountNumber())
                 .destinationAccountNumber(request.destinationAccountNumber())
@@ -83,7 +90,7 @@ public class PaymentServiceImpl implements PaymentService {
         log.info("Payment created: reference={}, source={}, destination={}, amount={}",
                 payment.getPaymentReference(), payment.getSourceAccountNumber(),
                 payment.getDestinationAccountNumber(), payment.getAmount());
-        return ApiResponse.of(201, "Payment created successfully.", toResponse(payment));
+        return ApiResponse.of(201, "Payment created successfully.", paymentMapper.toResponse(payment));
     }
 
 // ------------------------------------------------------------------
@@ -156,13 +163,21 @@ public class PaymentServiceImpl implements PaymentService {
 
         transition(payment, PaymentStatus.COMPLETED);
         log.info("Payment completed: reference={}", payment.getPaymentReference());
-        return ApiResponse.of(200, "Payment executed successfully.", toResponse(payment));
+        eventProducer.publishPaymentCompleted(new PaymentCompletedEvent(
+                payment.getPaymentReference(),
+                payment.getSourceAccountNumber(),
+                payment.getDestinationAccountNumber(),
+                payment.getAmount(),
+                payment.getCurrency(),
+                LocalDateTime.now()
+        ));
+
+        return ApiResponse.of(200, "Payment executed successfully.", paymentMapper.toResponse(payment));
     }
 
     private void validateAccountData(AccountDto account, String accountNumber) {
         if (account == null || account.balance() == null || account.status() == null) {
-            throw new PaymentProcessingException(
-                    "Incomplete account data received from account-service for " + accountNumber);
+            throw new PaymentProcessingException("Incomplete account data received from account-service for " + accountNumber);
         }
     }
 
@@ -193,8 +208,9 @@ public class PaymentServiceImpl implements PaymentService {
         transition(payment, PaymentStatus.CANCELLED);
         log.info("Payment cancelled: reference={}", payment.getPaymentReference());
 
-        return ApiResponse.of(200, "Payment cancelled successfully.", toResponse(payment));
+        return ApiResponse.of(200, "Payment cancelled successfully.", paymentMapper.toResponse(payment));
     }
+
 
 
     // ----------------------------
@@ -204,8 +220,16 @@ public class PaymentServiceImpl implements PaymentService {
         transition(payment, PaymentStatus.FAILED);
 
         log.warn("Payment failed: reference={}, reason={}", payment.getPaymentReference(), reason);
-
-        return ApiResponse.of(402, "Payment failed: " + reason, toResponse(payment));
+        eventProducer.publishPaymentFailed(PaymentFailedEvent.builder()
+                        .paymentReference(payment.getPaymentReference())
+                        .reason(reason)
+                        .sourceAccountNumber(payment.getSourceAccountNumber())
+                        .currency(payment.getCurrency())
+                        .amount(payment.getAmount())
+                        .destinationAccountNumber(payment.getDestinationAccountNumber())
+                        .failedAt(LocalDateTime.now())
+                .build());
+        return ApiResponse.of(402, "Payment failed: " + reason, paymentMapper.toResponse(payment));
     }
 
     // --------------------------------------
@@ -232,13 +256,11 @@ public class PaymentServiceImpl implements PaymentService {
     // ------------------------------------------
 
 
-
     @Override
     @Transactional(readOnly = true)
     public ApiResponse<PaymentResponse> getPayment(Long paymentId) {
-        return ApiResponse.of(200, "Payment retrieved successfully.", toResponse(getPaymentOrThrow(paymentId)));
+        return ApiResponse.of(200, "Payment retrieved successfully.", paymentMapper.toResponse(getPaymentOrThrow(paymentId)));
     }
-
 
 
     // --------------------------------------
@@ -250,9 +272,8 @@ public class PaymentServiceImpl implements PaymentService {
     public ApiResponse<PaymentResponse> getPaymentByReference(String paymentReference) {
         Payment payment = paymentRepository.findByPaymentReference(paymentReference)
                 .orElseThrow(() -> new PaymentNotFoundException("Payment not found: " + paymentReference));
-        return ApiResponse.of(200, "Payment retrieved successfully.", toResponse(payment));
+        return ApiResponse.of(200, "Payment retrieved successfully.", paymentMapper.toResponse(payment));
     }
-
 
     // --------------------------------------
     //  Get Payment By Account
@@ -264,7 +285,7 @@ public class PaymentServiceImpl implements PaymentService {
         List<PaymentResponse> payments = paymentRepository
                 .findBySourceAccountNumberOrDestinationAccountNumber(accountNumber, accountNumber)
                 .stream()
-                .map(this::toResponse)
+                .map(paymentMapper::toResponse)
                 .toList();
         return ApiResponse.of(200, "Payments retrieved successfully.", payments);
     }
@@ -289,38 +310,7 @@ public class PaymentServiceImpl implements PaymentService {
         paymentRepository.save(payment);
     }
 
-    private String generatePaymentReference() {
-        for (int attempt = 0; attempt < 20; attempt++) {
-            String candidate = "PAY-" + LocalDate.now().format(DATE_FORMAT) + "-" + randomAlphaNumeric(4);
-            if (!paymentRepository.existsByPaymentReference(candidate)) {
-                return candidate;
-            }
-        }
-        throw new PaymentProcessingException("Unable to generate a unique payment reference");
-    }
 
 
-    private String randomAlphaNumeric(int length) {
-        StringBuilder sb = new StringBuilder(length);
-        for (int i = 0; i < length; i++) {
-            sb.append(ALPHANUMERIC.charAt(RANDOM.nextInt(ALPHANUMERIC.length())));
-        }
-        return sb.toString();
-    }
 
-
-    private PaymentResponse toResponse(Payment payment) {
-        return new PaymentResponse(
-                payment.getId(),
-                payment.getPaymentReference(),
-                payment.getSourceAccountNumber(),
-                payment.getDestinationAccountNumber(),
-                payment.getAmount(),
-                payment.getCurrency(),
-                payment.getDescription(),
-                payment.getStatus(),
-                payment.getCreatedAt(),
-                payment.getUpdatedAt()
-        );
-    }
 }

@@ -74,8 +74,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(PaymentProcessingException.class)
     public ResponseEntity<ApiError> handleProcessingError(PaymentProcessingException ex) {
         log.error("Payment processing failure", ex);
-        return build(HttpStatus.BAD_GATEWAY, "PAYMENT_PROCESSING_ERROR",
-                "Payment could not be processed. Please try again later.");
+        return build(HttpStatus.BAD_GATEWAY, "PAYMENT_PROCESSING_ERROR", "Payment could not be processed. Please try again later.");
     }
 
     @ExceptionHandler(FeignException.class)

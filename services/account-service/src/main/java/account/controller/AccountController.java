@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import javax.security.auth.login.AccountNotFoundException;
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -50,5 +51,10 @@ public class AccountController {
     @PatchMapping("/{accountNumber}/activate")
     public ResponseEntity<ApiResponse<AccountResponse>>  activate(@PathVariable String accountNumber) throws AccountNotFoundException {
         return ResponseEntity.ok(accountService.activateAccount(accountNumber));
+    }
+
+    @GetMapping("/all")
+    public ResponseEntity<ApiResponse<List<AccountResponse>>> getAccounts() {
+        return ResponseEntity.ok(accountService.getAllAccounts());
     }
 }

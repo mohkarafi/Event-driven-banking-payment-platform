@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.util.List;
 
 
 @Service
@@ -147,9 +148,19 @@ public class AccountServiceImplt implements AccountService {
 
     }
 
+    @Override
+    public ApiResponse<List<AccountResponse>> getAllAccounts() {
+            List<Account> accounts = accountRepository.findAll();
 
+            if (accounts.isEmpty()) {
+                throw new AccountNotFoundException("No accounts found");
+            }
 
-
+            List<AccountResponse> responses = accounts.stream()
+                    .map(this::toResponse)
+                    .toList();
+            return new ApiResponse<>(HttpStatus.OK.value() , "All accounts found successfully " , responses);
+    }
 
 
     private void validateActiveAccount(Account account) {
@@ -172,6 +183,7 @@ public class AccountServiceImplt implements AccountService {
             );
         }
     }
+
 
     private Account getAccountEntity(String accountNumber) throws AccountNotFoundException {
         return accountRepository.findByAccountNumber(accountNumber)

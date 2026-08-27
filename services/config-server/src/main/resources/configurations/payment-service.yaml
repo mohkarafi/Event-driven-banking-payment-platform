@@ -11,12 +11,27 @@ spring:
       ddl-auto: create-drop
     database: postgresql
     database-platform: org.hibernate.dialect.PostgreSQLDialect
-  kafka:
-    bootstrap-servers: localhost:9092
+
+  Kafka:
+    bootstrap-servers:
+      - localhost:9092
+      - localhost:9093
+
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+      acks: all
+      retries: 10
+
       properties:
-        max.block.ms: 3000
-        delivery.timeout.ms: 10000
-        request.timeout.ms: 5000
+        enable:
+          idempotence: true
+
+        delivery:
+          timeout:
+            ms: 120000
+
+        request:
+          timeout:
+            ms: 30000

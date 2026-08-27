@@ -3,3 +3,4 @@ spring:
     name: payment-service
   config:
     import: optional:configserver:http://localhost:8888/
+    override-none: true

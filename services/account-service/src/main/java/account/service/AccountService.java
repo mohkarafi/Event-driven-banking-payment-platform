@@ -3,6 +3,8 @@ package account.service;
 import account.dto.*;
 import account.exception.AccountNotFoundException;
 
+import java.util.List;
+
 public interface AccountService {
 
     ApiResponse<AccountResponse> createAccount(CreateAccountRequest request) ;
@@ -18,4 +20,6 @@ public interface AccountService {
     ApiResponse<AccountResponse> blockAccount(String accountNumber) throws AccountNotFoundException;
 
     ApiResponse<AccountResponse> activateAccount(String accountNumber) throws AccountNotFoundException;
+
+    ApiResponse<List<AccountResponse>> getAllAccounts();
 }

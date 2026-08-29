@@ -11,3 +11,18 @@ spring:
       ddl-auto: create
     database: postgresql
     database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  kafka:
+    bootstrap-servers:
+      - localhost:9092
+      - localhost:9093
+    consumer:
+      group-id: transaction-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: com.example.transactionservice.dto
+        spring.json.value.default.type: com.example.transactionservice.dto.PaymentCompletedEvent
+        spring.json.use.type.headers: false

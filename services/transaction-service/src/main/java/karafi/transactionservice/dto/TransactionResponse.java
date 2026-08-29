@@ -1,8 +1,13 @@
 package karafi.transactionservice.dto;
 
+import karafi.transactionservice.entity.TransactionStatus;
+import karafi.transactionservice.entity.TransactionType;
+import lombok.Builder;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+@Builder
 public record TransactionResponse(
         Long id,
         String transactionReference,
